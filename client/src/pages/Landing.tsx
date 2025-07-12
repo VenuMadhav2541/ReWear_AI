@@ -15,30 +15,30 @@ export default function Landing() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="gradient-bg py-20">
+      <section className="hero-gradient py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+            <h1 className="text-4xl md:text-6xl font-bold text-white mb-6">
               Sustainable Fashion<br />
-              <span className="text-emerald-600">Starts Here</span>
+              <span className="text-yellow-300">Starts Here</span>
             </h1>
-            <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+            <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
               Exchange unused clothes through direct swaps or our point-based system. 
               Reduce waste, refresh your wardrobe, and join our sustainable community.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link href="/browse">
-                <Button size="lg" className="gradient-btn text-white px-8 py-4 text-lg">
+                <Button size="lg" className="gradient-btn px-8 py-4 text-lg">
                   Start Swapping
                 </Button>
               </Link>
               <Link href="/browse">
-                <Button size="lg" variant="outline" className="px-8 py-4 text-lg border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-50">
+                <Button size="lg" variant="outline" className="px-8 py-4 text-lg border-2 border-white text-white hover:bg-white hover:text-gray-900 btn-animate rounded-2xl">
                   Browse Items
                 </Button>
               </Link>
               <Link href="/add-item">
-                <Button size="lg" className="bg-yellow-500 hover:bg-yellow-600 text-white px-8 py-4 text-lg">
+                <Button size="lg" className="gradient-accent-btn px-8 py-4 text-lg">
                   List an Item
                 </Button>
               </Link>
@@ -57,11 +57,11 @@ export default function Landing() {
       )}
 
       {/* Categories Section */}
-      <section className="py-16 gradient-bg">
+      <section className="py-16 bg-gradient-to-r from-slate-50 to-purple-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Shop by Category</h2>
-            <p className="text-gray-600">Find exactly what you're looking for</p>
+            <h2 className="text-3xl font-bold text-gradient mb-4">Shop by Category</h2>
+            <p className="text-muted-modern">Find exactly what you're looking for</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
@@ -69,10 +69,10 @@ export default function Landing() {
               { icon: "👔", title: "Men's", description: "Shirts, pants, jackets and more" },
               { icon: "👶", title: "Kids", description: "Growing fast? Perfect for swapping!" },
             ].map((category) => (
-              <Card key={category.title} className="gradient-card custom-shadow hover:shadow-xl transition-all duration-300">
+              <Card key={category.title} className="landing-card card-hover">
                 <CardContent className="p-8 text-center">
                   <div className="text-4xl mb-4">{category.icon}</div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">{category.title}</h3>
+                  <h3 className="text-xl font-bold text-modern mb-2">{category.title}</h3>
                   <p className="text-gray-600">{category.description}</p>
                 </CardContent>
               </Card>
