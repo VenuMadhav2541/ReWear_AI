@@ -1,0 +1,92 @@
+🧥 ReWear – Community Clothing Exchange
+🔍 Objective
+ReWear is a sustainable fashion platform allowing users to exchange unused clothes through direct swaps or a point-based system, encouraging reuse and reducing textile waste.
+
+✅ Functional Features (Strictly Required)
+1. Authentication
+Email/password registration & login
+
+Secure sessions with validations
+
+User role: Regular User and Admin
+
+2. Landing Page
+Responsive with gradient design and shadows
+
+Featured items carousel
+
+Calls-to-action:
+
+“Start Swapping”
+
+“Browse Items”
+
+“List an Item”
+
+3. User Dashboard
+View profile details
+
+Points balance
+
+Uploaded item list (Pending, Approved, Swapped)
+
+Ongoing and completed swap tracking
+
+4. Item Detail Page
+Image gallery
+
+Title, description, size, condition, type, tags
+
+Uploader’s basic info
+
+Actions:
+
+“Request Swap”
+
+“Redeem via Points”
+
+Item availability status
+
+5. Add New Item Page
+Upload multiple images
+
+Enter:
+
+Title
+
+Description
+
+Category (Men/Women/Kids)
+
+Type (e.g., Shirt, Jeans)
+
+Size, Condition, Tags
+
+Submit to list
+
+6. Admin Panel
+View all listed items
+
+Approve/Reject items
+
+Delete spam/inappropriate content
+
+Lightweight, minimal dashboard for oversight
+
+🧪 Evaluation Mapping (Based on Uploaded Criteria)
+Criteria	Details	Weight
+Database Design	Well-structured schema (Users, Items, Swaps, Points). Relational/NoSQL. If using Firebase/Supabase, real-time sync recommended.	35% (or 15%)
+Coding Standards	Modular, reusable components; strong input validation (front+back); dynamic values; fast performance; fallback errors; linter used; readable complex logic.	40%
+UI/UX Design	Responsive layout, modern gradients, shadow, search, filter, pagination (optional), accessible colors and font contrast.	15%
+Team Collaboration	Equal contribution across all modules by the team; traceable commits; collaborative implementation.	10%
+
+💡 Optional Enhancements (Bonus Marks / Edge)
+Real-time swap status updates (e.g., WebSockets or Firebase listeners)
+
+User-to-user messaging/chat before swapping
+
+Email notifications for swap confirmations
+
+Points redemption history
+
+Dark mode / accessibility settings
