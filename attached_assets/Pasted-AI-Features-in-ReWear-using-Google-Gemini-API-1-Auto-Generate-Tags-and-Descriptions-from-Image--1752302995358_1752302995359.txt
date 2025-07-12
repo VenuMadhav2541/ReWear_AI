@@ -1,0 +1,123 @@
+AI Features in ReWear using Google Gemini API
+1. 🔖 Auto-Generate Tags and Descriptions from Image & Title
+Where: On Add New Item page
+Problem Solved: Users often skip or write poor item descriptions or tags.
+
+How It Works:
+
+User uploads image & basic title.
+
+Gemini analyzes both and generates:
+
+Descriptive item summary
+
+Recommended tags (e.g., “Vintage, Denim, Casual”)
+
+Gemini Prompt Example:
+
+text
+Copy
+Edit
+You are an assistant for a clothing exchange platform. A user uploaded a photo of a used clothing item and entered the title: "Men’s Winter Jacket".
+
+Generate:
+1. A short, appealing product description (max 50 words)
+2. 5 relevant tags
+Integration Flow:
+
+On image upload, send title + base64 image to Gemini Vision API.
+
+Receive and auto-fill fields (editable by user).
+
+2. 🧠 Chat Assistant (SwapBot)
+Where: On Dashboard / Item Page / Landing
+Use: Acts like a chatbot for onboarding and swap guidance.
+
+User Prompts:
+
+“How do I redeem points?”
+
+“Can I swap without points?”
+
+“How long do swaps take?”
+
+Gemini Prompt Setup:
+
+text
+Copy
+Edit
+You are SwapBot, a friendly assistant for a community clothing exchange platform called ReWear. Answer user questions in a helpful and polite tone. Use step-by-step instructions if needed.
+Implementation:
+
+Integrate Gemini via streaming chat UI (React component).
+
+Maintain prompt history/context with history array.
+
+3. 🔍 Smart Search via Natural Language
+Where: On Browse/Search Items page
+Problem Solved: Regular search only matches exact text or filters.
+
+Gemini Use:
+
+Convert user's natural search query into structured filter values.
+
+Example:
+
+Query: “Looking for casual summer dresses in M size”
+
+Gemini returns:
+
+json
+Copy
+Edit
+{
+  "category": "Women",
+  "type": "Dress",
+  "tags": ["casual", "summer"],
+  "size": "M"
+}
+Prompt:
+
+text
+Copy
+Edit
+Parse this user search into structured filter parameters for a fashion exchange site. Return as JSON:
+Input: "Looking for casual summer dresses in M size"
+4. ✍️ Auto-Fill Condition Based on Description
+Where: On Add New Item
+
+How It Works:
+
+After the user enters a short description, Gemini can predict the item’s condition (New, Like New, Good, Fair).
+
+Prompt:
+
+text
+Copy
+Edit
+Classify the condition of the following clothing item based on the user's description. Choose one from: New, Like New, Good, Fair.
+Description: "Worn twice, still looks new, no stains or damage."
+5. 🧹 Toxic Content Filtering (Description Moderation)
+Where: On Admin Panel / Add Item
+
+How It Works:
+
+Pass title/description to Gemini and ask if it contains spam/offensive language.
+
+Prompt:
+
+text
+Copy
+Edit
+Is the following item description appropriate for a family-friendly clothing exchange platform? Return only "Yes" or "No".
+Text: "This is crap, worn by a loser."
+6. ✨ Style Suggestion / Outfit Completion (Future Expansion)
+Where: On Item Page
+AI Feature: "Show matching outfit suggestions"
+
+Prompt:
+
+text
+Copy
+Edit
+Suggest clothing styles that match a "blue denim jacket for men". List 3 complementary items (e.g., whi
