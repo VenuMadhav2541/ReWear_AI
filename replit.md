@@ -49,6 +49,7 @@ Preferred communication style: Simple, everyday language.
 - Size and condition tracking
 - Admin approval workflow
 - Search and filtering capabilities
+- **AI-powered auto-generation of tags and descriptions from images**
 
 ### Swap System
 - Direct item swaps between users
@@ -69,6 +70,12 @@ Preferred communication style: Simple, everyday language.
 - User management
 - System statistics
 - Content moderation
+
+### AI Features (Google Gemini API)
+- **Auto-Generate Tags and Descriptions**: Analyzes uploaded images and titles to suggest item descriptions, tags, and condition ratings
+- **Natural Language Search**: Converts user queries like "looking for casual summer dresses in size M" into structured search filters
+- **Content Moderation**: AI-powered filtering of inappropriate content in descriptions
+- **Smart Suggestions**: Intelligent recommendations based on image analysis and user input
 
 ## Data Flow
 

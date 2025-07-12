@@ -1,18 +1,21 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search } from "lucide-react";
+import { Search, Sparkles, Loader2 } from "lucide-react";
 import { ItemWithOwner } from "@shared/schema";
 import ItemCard from "@/components/ItemCard";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Browse() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [size, setSize] = useState("");
   const [condition, setCondition] = useState("");
+  const [naturalQuery, setNaturalQuery] = useState("");
+  const { toast } = useToast();
 
   const { data: items = [], isLoading } = useQuery<ItemWithOwner[]>({
     queryKey: ["/api/items", { search, category, size, condition }],
@@ -31,6 +34,54 @@ export default function Browse() {
     },
   });
 
+  const naturalSearchMutation = useMutation({
+    mutationFn: async (query: string) => {
+      const response = await fetch("/api/search/natural", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query }),
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to process natural search");
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const { filters } = data;
+      
+      // Apply the AI-parsed filters
+      if (filters.category) setCategory(filters.category.toLowerCase());
+      if (filters.size) setSize(filters.size);
+      if (filters.condition) setCondition(filters.condition.toLowerCase());
+      if (filters.search) setSearch(filters.search);
+      
+      toast({
+        title: "Smart search applied!",
+        description: "Your natural language query has been converted to filters.",
+      });
+    },
+    onError: (error) => {
+      console.error("Natural search error:", error);
+      toast({
+        title: "Search failed",
+        description: "Using your query as regular search instead.",
+        variant: "destructive",
+      });
+      // Fall back to regular search
+      setSearch(naturalQuery);
+    },
+  });
+
+  const handleNaturalSearch = () => {
+    if (!naturalQuery.trim()) return;
+    naturalSearchMutation.mutate(naturalQuery);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -42,6 +93,38 @@ export default function Browse() {
         {/* Search and Filter */}
         <Card className="gradient-card mb-8 custom-shadow">
           <CardContent className="p-6">
+            {/* Natural Language Search */}
+            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-5 h-5 text-blue-600" />
+                <h3 className="font-semibold text-blue-900">Smart Search</h3>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Try: 'Looking for casual summer dresses in size M' or 'Men's jackets in good condition'"
+                  value={naturalQuery}
+                  onChange={(e) => setNaturalQuery(e.target.value)}
+                  className="flex-1"
+                  onKeyPress={(e) => e.key === 'Enter' && handleNaturalSearch()}
+                />
+                <Button
+                  onClick={handleNaturalSearch}
+                  disabled={naturalSearchMutation.isPending || !naturalQuery.trim()}
+                  className="gradient-btn text-white"
+                >
+                  {naturalSearchMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-blue-600 mt-2">
+                ✨ Describe what you're looking for in natural language, and AI will set the filters for you!
+              </p>
+            </div>
+
+            {/* Regular Search and Filters */}
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />

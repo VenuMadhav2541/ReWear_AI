@@ -10,6 +10,7 @@ import { insertUserSchema, insertItemSchema, insertSwapSchema } from "@shared/sc
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
+import { generateItemSuggestions, moderateContent, parseNaturalSearch } from "./gemini";
 
 const pgSession = connectPg(session);
 
@@ -179,6 +180,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get user items error:", error);
       res.status(500).json({ message: "Failed to fetch user items" });
+    }
+  });
+
+  // AI suggestion endpoint
+  app.post("/api/items/ai-suggestions", requireAuth, upload.single("image"), async (req: AuthRequest, res) => {
+    try {
+      const { title } = req.body;
+      const file = req.file;
+      
+      if (!title) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      let imagePath: string | undefined;
+      if (file) {
+        imagePath = file.path;
+      }
+
+      const suggestions = await generateItemSuggestions(title, imagePath);
+      
+      // Clean up uploaded file if it exists
+      if (imagePath && fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
+
+      res.json(suggestions);
+    } catch (error) {
+      console.error("AI suggestions error:", error);
+      res.status(500).json({ message: "Failed to generate AI suggestions" });
+    }
+  });
+
+  // Natural language search endpoint
+  app.post("/api/search/natural", async (req, res) => {
+    try {
+      const { query } = req.body;
+      
+      if (!query) {
+        return res.status(400).json({ message: "Query is required" });
+      }
+
+      const filters = await parseNaturalSearch(query);
+      const items = await storage.getItems(filters);
+      
+      res.json({ filters, items });
+    } catch (error) {
+      console.error("Natural search error:", error);
+      res.status(500).json({ message: "Failed to process natural search" });
     }
   });
 

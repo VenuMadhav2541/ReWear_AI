@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Sparkles, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +36,11 @@ export default function AddItem() {
   const queryClient = useQueryClient();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<{
+    description: string;
+    tags: string[];
+    condition?: string;
+  } | null>(null);
 
   const {
     register,
@@ -54,6 +59,8 @@ export default function AddItem() {
   const type = watch("type");
   const size = watch("size");
   const condition = watch("condition");
+  const title = watch("title");
+  const description = watch("description");
 
   const addItemMutation = useMutation({
     mutationFn: async (data: AddItemForm) => {
@@ -111,6 +118,68 @@ export default function AddItem() {
       });
     },
   });
+
+  const aiSuggestionMutation = useMutation({
+    mutationFn: async ({ title, image }: { title: string; image?: File }) => {
+      const formData = new FormData();
+      formData.append("title", title);
+      if (image) {
+        formData.append("image", image);
+      }
+      
+      const response = await fetch("/api/items/ai-suggestions", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to get AI suggestions");
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAiSuggestions(data);
+      // Auto-fill form fields if they're empty
+      if (!description && data.description) {
+        setValue("description", data.description);
+      }
+      if (data.tags && data.tags.length > 0) {
+        setValue("tags", data.tags.join(", "));
+      }
+      if (!condition && data.condition) {
+        setValue("condition", data.condition);
+      }
+      toast({
+        title: "AI suggestions generated!",
+        description: "Your item description, tags, and condition have been suggested based on the image and title.",
+      });
+    },
+    onError: (error) => {
+      console.error("AI suggestion error:", error);
+      toast({
+        title: "AI suggestions failed",
+        description: error.message || "Unable to generate suggestions. Please fill in the fields manually.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleGetAISuggestions = () => {
+    if (!title || title.trim().length < 3) {
+      toast({
+        title: "Title required",
+        description: "Please enter a title for your item first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const primaryImage = selectedFiles[0];
+    aiSuggestionMutation.mutate({ title, image: primaryImage });
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -221,15 +290,32 @@ export default function AddItem() {
                   <Label htmlFor="title" className="text-sm font-medium text-gray-700">
                     Title *
                   </Label>
-                  <Input
-                    id="title"
-                    {...register("title")}
-                    className="mt-1"
-                    placeholder="Enter item title"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="title"
+                      {...register("title")}
+                      className="mt-1 flex-1"
+                      placeholder="Enter item title"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleGetAISuggestions}
+                      disabled={aiSuggestionMutation.isPending || !title || title.trim().length < 3}
+                      className="gradient-btn text-white mt-1 px-3 py-2 h-auto"
+                    >
+                      {aiSuggestionMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                   {errors.title && (
                     <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>
                   )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    ✨ Click the sparkle button to get AI suggestions for description, tags, and condition
+                  </p>
                 </div>
 
                 <div>
@@ -307,6 +393,33 @@ export default function AddItem() {
                   )}
                 </div>
               </div>
+
+              {/* AI Suggestions Display */}
+              {aiSuggestions && (
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-5 h-5 text-blue-600" />
+                    <h3 className="font-semibold text-blue-900">AI Suggestions</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium text-blue-800">Suggested Description:</Label>
+                      <p className="text-sm text-blue-700 bg-white/50 p-2 rounded mt-1">{aiSuggestions.description}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-blue-800">Suggested Tags:</Label>
+                      <p className="text-sm text-blue-700 bg-white/50 p-2 rounded mt-1">{aiSuggestions.tags.join(", ")}</p>
+                    </div>
+                    {aiSuggestions.condition && (
+                      <div>
+                        <Label className="text-sm font-medium text-blue-800">Suggested Condition:</Label>
+                        <p className="text-sm text-blue-700 bg-white/50 p-2 rounded mt-1">{aiSuggestions.condition}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-blue-600">These suggestions have been automatically filled in the form fields below. You can edit them as needed.</p>
+                  </div>
+                </div>
+              )}
 
               {/* Description */}
               <div>
