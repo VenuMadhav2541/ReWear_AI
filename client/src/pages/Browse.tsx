@@ -11,9 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Browse() {
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [size, setSize] = useState("");
-  const [condition, setCondition] = useState("");
+  const [category, setCategory] = useState("all");
+  const [size, setSize] = useState("all");
+  const [condition, setCondition] = useState("all");
   const [naturalQuery, setNaturalQuery] = useState("");
   const { toast } = useToast();
 
@@ -22,9 +22,9 @@ export default function Browse() {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.append("search", search);
-      if (category) params.append("category", category);
-      if (size) params.append("size", size);
-      if (condition) params.append("condition", condition);
+      if (category !== "all") params.append("category", category);
+      if (size !== "all") params.append("size", size);
+      if (condition !== "all") params.append("condition", condition);
       
       const response = await fetch(`/api/items?${params}`);
       if (!response.ok) {
@@ -141,7 +141,7 @@ export default function Browse() {
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Categories</SelectItem>
+                    <SelectItem value="all">All Categories</SelectItem>
                     <SelectItem value="women">Women</SelectItem>
                     <SelectItem value="men">Men</SelectItem>
                     <SelectItem value="kids">Kids</SelectItem>
@@ -153,7 +153,7 @@ export default function Browse() {
                     <SelectValue placeholder="All Sizes" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Sizes</SelectItem>
+                    <SelectItem value="all">All Sizes</SelectItem>
                     <SelectItem value="XS">XS</SelectItem>
                     <SelectItem value="S">S</SelectItem>
                     <SelectItem value="M">M</SelectItem>
@@ -168,13 +168,14 @@ export default function Browse() {
                     <SelectValue placeholder="All Conditions" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Conditions</SelectItem>
+                    <SelectItem value="all">All Conditions</SelectItem>
                     <SelectItem value="like-new">Like New</SelectItem>
                     <SelectItem value="excellent">Excellent</SelectItem>
                     <SelectItem value="good">Good</SelectItem>
                     <SelectItem value="fair">Fair</SelectItem>
                   </SelectContent>
                 </Select>
+
 
                 <Button 
                   variant="outline" 

@@ -16,15 +16,17 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql, or, ilike } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { requests, type InsertRequest, type Request } from "@shared/schema";
+
+const requester = alias(users, "requesterUser");
 
 export interface IStorage {
-  // User operations
   getUser(id: number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserPoints(userId: number, points: number): Promise<void>;
 
-  // Item operations
   getItems(filters?: {
     category?: string;
     size?: string;
@@ -38,26 +40,37 @@ export interface IStorage {
   updateItemStatus(id: number, status: string): Promise<void>;
   deleteItem(id: number): Promise<void>;
 
-  // Swap operations
   getSwaps(userId?: number): Promise<SwapWithDetails[]>;
   getSwap(id: number): Promise<SwapWithDetails | undefined>;
   createSwap(swap: InsertSwap): Promise<Swap>;
   updateSwapStatus(id: number, status: string): Promise<void>;
 
-  // Point transaction operations
   getPointTransactions(userId: number): Promise<PointTransaction[]>;
   createPointTransaction(transaction: InsertPointTransaction): Promise<PointTransaction>;
 
-  // Admin operations
   getPendingItems(): Promise<ItemWithOwner[]>;
   getUserStats(): Promise<{ totalUsers: number; totalItems: number; totalSwaps: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  async createRequest(data: InsertRequest): Promise<Request> {
+    const [result] = await db.insert(requests).values(data).returning();
+    return result;
+  }
+
+  async getRequestsForOwner(ownerId: number): Promise<Request[]> {
+    return await db.select().from(requests).where(
+      and(eq(requests.ownerId, ownerId), eq(requests.status, "pending"))
+    ).orderBy(desc(requests.createdAt));
+  }
+
+  async approveRequest(id: number): Promise<void> {
+    await db.update(requests).set({ status: "approved" }).where(eq(requests.id, id));
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -66,21 +79,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(userData: InsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .returning();
+    const [user] = await db.insert(users).values(userData).returning();
     return user;
   }
 
   async updateUserPoints(userId: number, points: number): Promise<void> {
-    await db
-      .update(users)
-      .set({ points })
-      .where(eq(users.id, userId));
+    await db.update(users).set({ points }).where(eq(users.id, userId));
   }
 
-  // Item operations
   async getItems(filters?: {
     category?: string;
     size?: string;
@@ -89,35 +95,46 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     ownerId?: number;
   }): Promise<ItemWithOwner[]> {
-    let query = db
-      .select()
-      .from(items)
-      .leftJoin(users, eq(items.ownerId, users.id))
-      .where(eq(items.status, filters?.status || "approved"));
+    const conditions = [];
+
+    if (filters?.status) {
+      conditions.push(eq(items.status, filters.status));
+    } else {
+      conditions.push(eq(items.status, "approved"));
+    }
 
     if (filters?.category) {
-      query = query.where(eq(items.category, filters.category));
+      conditions.push(eq(items.category, filters.category));
     }
+
     if (filters?.size) {
-      query = query.where(eq(items.size, filters.size));
+      conditions.push(eq(items.size, filters.size));
     }
+
     if (filters?.condition) {
-      query = query.where(eq(items.condition, filters.condition));
+      conditions.push(eq(items.condition, filters.condition));
     }
+
     if (filters?.search) {
-      query = query.where(
+      conditions.push(
         or(
           ilike(items.title, `%${filters.search}%`),
           ilike(items.description, `%${filters.search}%`)
         )
       );
     }
-    if (filters?.ownerId) {
-      query = query.where(eq(items.ownerId, filters.ownerId));
+
+    if (filters?.ownerId !== undefined) {
+      conditions.push(eq(items.ownerId, filters.ownerId));
     }
 
-    const results = await query.orderBy(desc(items.createdAt));
-    
+    const results = await db
+      .select()
+      .from(items)
+      .leftJoin(users, eq(items.ownerId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(items.createdAt));
+
     return results.map(result => ({
       ...result.items,
       owner: result.users!,
@@ -140,53 +157,49 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createItem(itemData: InsertItem): Promise<Item> {
-    const [item] = await db
-      .insert(items)
-      .values(itemData)
-      .returning();
+    const [item] = await db.insert(items).values(itemData).returning();
     return item;
   }
 
   async updateItemStatus(id: number, status: string): Promise<void> {
-    await db
-      .update(items)
-      .set({ status })
-      .where(eq(items.id, id));
+    await db.update(items).set({ status }).where(eq(items.id, id));
   }
 
   async deleteItem(id: number): Promise<void> {
     await db.delete(items).where(eq(items.id, id));
   }
 
-  // Swap operations
   async getSwaps(userId?: number): Promise<SwapWithDetails[]> {
-    let query = db
-      .select()
-      .from(swaps)
-      .leftJoin(items, eq(swaps.itemId, items.id))
-      .leftJoin(users, eq(items.ownerId, users.id));
+  const conditions = userId
+    ? or(eq(swaps.requesterId, userId), eq(swaps.ownerId, userId))
+    : undefined;
 
-    if (userId) {
-      query = query.where(
-        or(
-          eq(swaps.requesterId, userId),
-          eq(swaps.ownerId, userId)
-        )
-      );
-    }
+  const results = await db
+    .select({
+      swaps,
+      item: items,
+      owner: users,
+      requester: requester,
+    })
+    .from(swaps)
+    .leftJoin(items, eq(swaps.itemId, items.id))
+    .leftJoin(users, eq(items.ownerId, users.id)) // item owner
+    .leftJoin(requester, eq(swaps.requesterId, requester.id))
+    .where(conditions)
+    .orderBy(desc(swaps.createdAt));
 
-    const results = await query.orderBy(desc(swaps.createdAt));
-    
-    return results.map(result => ({
-      ...result.swaps,
+  return results
+    .filter(r => r.item && r.owner && r.requester) // Filter out incomplete rows
+    .map((r) => ({
+      ...r.swaps,
       item: {
-        ...result.items!,
-        owner: result.users!,
+        ...(r.item as NonNullable<typeof r.item>),
+        owner: r.owner!,
       },
-      requester: result.users!,
-      owner: result.users!,
+      requester: r.requester!,
+      owner: r.owner!,
     }));
-  }
+}
 
   async getSwap(id: number): Promise<SwapWithDetails | undefined> {
     const [result] = await db
@@ -210,21 +223,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createSwap(swapData: InsertSwap): Promise<Swap> {
-    const [swap] = await db
-      .insert(swaps)
-      .values(swapData)
-      .returning();
+    const [swap] = await db.insert(swaps).values(swapData).returning();
     return swap;
   }
 
   async updateSwapStatus(id: number, status: string): Promise<void> {
-    await db
-      .update(swaps)
-      .set({ status })
-      .where(eq(swaps.id, id));
+    await db.update(swaps).set({ status }).where(eq(swaps.id, id));
   }
 
-  // Point transaction operations
   async getPointTransactions(userId: number): Promise<PointTransaction[]> {
     return await db
       .select()
@@ -241,18 +247,19 @@ export class DatabaseStorage implements IStorage {
     return transaction;
   }
 
-  // Admin operations
   async getPendingItems(): Promise<ItemWithOwner[]> {
     const results = await db
-      .select()
+      .select({
+        item: items,
+        owner: users,
+      })
       .from(items)
       .leftJoin(users, eq(items.ownerId, users.id))
       .where(eq(items.status, "pending"))
       .orderBy(desc(items.createdAt));
-    
-    return results.map(result => ({
-      ...result.items,
-      owner: result.users!,
+    return results.map(row => ({
+      ...row.item,
+      owner: row.owner!,
     }));
   }
 

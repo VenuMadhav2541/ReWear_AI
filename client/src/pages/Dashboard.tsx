@@ -1,17 +1,65 @@
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// Updated Dashboard.tsx for handling swap and point requests
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Coins, Package, ArrowLeftRight, User, Calendar, MoreHorizontal } from "lucide-react";
+import {
+  Coins,
+  Package,
+  ArrowLeftRight,
+  User,
+  MoreHorizontal,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Link, useLocation } from "wouter";
-import { ItemWithOwner, SwapWithDetails, PointTransaction } from "@shared/schema";
+import {
+  ItemWithOwner,
+  SwapWithDetails,
+  PointTransaction,
+} from "@shared/schema";
 import { useEffect } from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+// Define enriched type locally
+export type SwapRequest = {
+  id: number;
+  createdAt: Date | null;
+  type: string;
+  status: string | null;
+  ownerId: number;
+  itemId: number;
+  itemTitle: string;
+  requesterId: number;
+  requesterName: string;
+  offeredItemId: number | null;
+  offeredItemTitle?: string;
+  offeredPoints: number | null;
+};
 
 export default function Dashboard() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -34,6 +82,30 @@ export default function Dashboard() {
     enabled: isAuthenticated,
   });
 
+  const { data: swapRequests = [] } = useQuery<SwapRequest[]>({
+    queryKey: ["/api/requests"],
+    enabled: isAuthenticated,
+  });
+
+  const approveRequest = useMutation({
+    mutationFn: (id: number) => fetch(`/api/requests/${id}/approve`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/points/transactions"] });
+    },
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "approved": return "bg-green-100 text-green-800";
+      case "pending": return "bg-yellow-100 text-yellow-800";
+      case "rejected": return "bg-red-100 text-red-800";
+      case "swapped": return "bg-blue-100 text-blue-800";
+      default: return "bg-gray-100 text-gray-800";
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -45,29 +117,11 @@ export default function Dashboard() {
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "approved":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "rejected":
-        return "bg-red-100 text-red-800";
-      case "swapped":
-        return "bg-blue-100 text-blue-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  if (!isAuthenticated) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Profile Header */}
         <Card className="gradient-card custom-shadow mb-8">
           <CardContent className="p-6">
             <div className="flex items-center space-x-6">
@@ -106,12 +160,12 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Dashboard Tabs */}
         <Tabs defaultValue="items" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="items">My Items</TabsTrigger>
             <TabsTrigger value="swaps">Swap History</TabsTrigger>
             <TabsTrigger value="points">Points History</TabsTrigger>
+            <TabsTrigger value="requests">Swap/Point Requests</TabsTrigger>
           </TabsList>
 
           {/* My Items Tab */}
@@ -127,15 +181,16 @@ export default function Dashboard() {
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No items yet</h3>
                     <p className="text-gray-600 mb-4">Start by listing your first item!</p>
                     <Link href="/add-item">
-                      <Button className="gradient-btn text-white">
-                        List Your First Item
-                      </Button>
+                      <Button className="gradient-btn text-white">List Your First Item</Button>
                     </Link>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {userItems.map((item) => (
-                      <div key={item.id} className="flex items-center space-x-4 p-4 bg-white rounded-lg border">
+                      <div
+                        key={item.id}
+                        className="flex items-center space-x-4 p-4 bg-white rounded-lg border"
+                      >
                         <img
                           src={item.images?.[0] || "/api/placeholder/100/100"}
                           alt={item.title}
@@ -143,19 +198,31 @@ export default function Dashboard() {
                         />
                         <div className="flex-1">
                           <h3 className="font-medium text-gray-900">{item.title}</h3>
-                          <p className="text-sm text-gray-500">{item.category} • {item.size}</p>
+                          <p className="text-sm text-gray-500">
+                            {item.category} • {item.size}
+                          </p>
                           <div className="flex items-center space-x-2 mt-1">
                             <Coins className="w-4 h-4 text-emerald-600" />
-                            <span className="text-sm text-emerald-600 font-medium">{item.points} points</span>
+                            <span className="text-sm text-emerald-600 font-medium">
+                              {item.points} points
+                            </span>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Badge className={getStatusColor(item.status)}>
                             {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                           </Badge>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => alert("Edit")}>Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => alert("Delete")}>Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     ))}
@@ -178,15 +245,16 @@ export default function Dashboard() {
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No swaps yet</h3>
                     <p className="text-gray-600 mb-4">Browse items to start swapping!</p>
                     <Link href="/browse">
-                      <Button className="gradient-btn text-white">
-                        Browse Items
-                      </Button>
+                      <Button className="gradient-btn text-white">Browse Items</Button>
                     </Link>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {swaps.map((swap) => (
-                      <div key={swap.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
+                      <div
+                        key={swap.id}
+                        className="flex items-center justify-between p-4 bg-white rounded-lg border"
+                      >
                         <div className="flex items-center space-x-4">
                           <img
                             src={swap.item.images?.[0] || "/api/placeholder/100/100"}
@@ -196,10 +264,14 @@ export default function Dashboard() {
                           <div>
                             <h3 className="font-medium text-gray-900">{swap.item.title}</h3>
                             <p className="text-sm text-gray-500">
-                              {swap.swapType === "points" ? "Points Redemption" : "Direct Swap"}
+                              {swap.swapType === "points"
+                                ? "Points Redemption"
+                                : "Direct Swap"}
                             </p>
                             <p className="text-xs text-gray-400">
-                              {new Date(swap.createdAt).toLocaleDateString()}
+                              {swap.createdAt
+                                ? new Date(swap.createdAt).toLocaleDateString()
+                                : "N/A"}
                             </p>
                           </div>
                         </div>
@@ -233,35 +305,102 @@ export default function Dashboard() {
                   <div className="text-center py-8">
                     <Coins className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No transactions yet</h3>
-                    <p className="text-gray-600">Start swapping to earn and spend points!</p>
+                    <p className="text-gray-600">
+                      Start swapping to earn and spend points!
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {pointTransactions.map((transaction) => (
-                      <div key={transaction.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
+                      <div
+                        key={transaction.id}
+                        className="flex items-center justify-between p-4 bg-white rounded-lg border"
+                      >
                         <div className="flex items-center space-x-4">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            transaction.amount > 0 ? "bg-green-100" : "bg-red-100"
-                          }`}>
-                            <Coins className={`w-5 h-5 ${
-                              transaction.amount > 0 ? "text-green-600" : "text-red-600"
-                            }`} />
+                          <div
+                            className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              transaction.amount > 0
+                                ? "bg-green-100"
+                                : "bg-red-100"
+                            }`}
+                          >
+                            <Coins
+                              className={`w-5 h-5 ${
+                                transaction.amount > 0
+                                  ? "text-green-600"
+                                  : "text-red-600"
+                              }`}
+                            />
                           </div>
                           <div>
-                            <h3 className="font-medium text-gray-900">{transaction.description}</h3>
-                            <p className="text-sm text-gray-500 capitalize">{transaction.type}</p>
+                            <h3 className="font-medium text-gray-900">
+                              {transaction.description}
+                            </h3>
+                            <p className="text-sm text-gray-500 capitalize">
+                              {transaction.type}
+                            </p>
                             <p className="text-xs text-gray-400">
-                              {new Date(transaction.createdAt).toLocaleDateString()}
+                              {transaction.createdAt
+                                ? new Date(transaction.createdAt).toLocaleDateString()
+                                : "N/A"}
                             </p>
                           </div>
                         </div>
-                        <div className={`text-lg font-semibold ${
-                          transaction.amount > 0 ? "text-green-600" : "text-red-600"
-                        }`}>
-                          {transaction.amount > 0 ? "+" : ""}{transaction.amount}
+                        <div
+                          className={`text-lg font-semibold ${
+                            transaction.amount > 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {transaction.amount > 0 ? "+" : ""}
+                          {transaction.amount}
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+
+          <TabsContent value="requests" className="space-y-4">
+            <Card className="gradient-card custom-shadow">
+              <CardHeader>
+                <CardTitle className="text-2xl font-bold text-gray-900">
+                  Incoming Swap & Point Requests
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {swapRequests.filter(req => req.ownerId === user?.id && req.status === "pending").length === 0 ? (
+                  <div className="text-center py-4 text-gray-600">
+                    No incoming requests.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {swapRequests
+                      .filter(req => req.ownerId === user?.id && req.status === "pending")
+                      .map((req) => (
+                        <div key={req.id} className="flex justify-between items-center bg-white p-4 rounded-lg border">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {req.type === "swap"
+                                ? `Swap Request: ${req.itemTitle} ↔ ${req.offeredItemTitle}`
+                                : `Point Offer: ${req.itemTitle} for ${req.offeredPoints} pts`}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              From: {req.requesterName}
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => approveRequest.mutate(req.id)}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            Approve
+                          </Button>
+                        </div>
+                      ))}
                   </div>
                 )}
               </CardContent>

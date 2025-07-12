@@ -4,45 +4,46 @@ import express from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
-import { requireAuth, requireAdmin, hashPassword, comparePassword, type AuthRequest } from "./middleware/auth";
+import {
+  requireAuth,
+  requireAdmin,
+  hashPassword,
+  comparePassword,
+  type AuthRequest,
+} from "./middleware/auth";
 import { upload } from "./middleware/upload";
-import { insertUserSchema, insertItemSchema, insertSwapSchema } from "@shared/schema";
-import { z } from "zod";
+import {
+  insertUserSchema,
+  insertItemSchema,
+  insertSwapSchema,
+} from "@shared/schema";
 import fs from "fs";
 import path from "path";
-import { generateItemSuggestions, moderateContent, parseNaturalSearch } from "./gemini";
+import {
+  generateItemSuggestions,
+  parseNaturalSearch,
+} from "./gemini";
+
+import { db } from "./db";
+import { items, users, requests } from "@shared/schema";
+import { eq, sql, and, desc, or } from "drizzle-orm";
+
 
 const pgSession = connectPg(session);
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Create uploads directory if it doesn't exist
+  // Ensure uploads folder exists
   const uploadsDir = path.join(process.cwd(), "uploads");
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  // Session configuration
-  app.use(session({
-    store: new pgSession({
-      conString: process.env.DATABASE_URL,
-      createTableIfMissing: true,
-    }),
-    secret: process.env.SESSION_SECRET || "default-secret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    },
-  }));
-
-  // Auth routes
+  
+  // ------------------ AUTH ROUTES ------------------ //
   app.post("/api/auth/register", async (req, res) => {
     try {
       const validatedData = insertUserSchema.parse(req.body);
       const existingUser = await storage.getUserByEmail(validatedData.email);
-      
       if (existingUser) {
         return res.status(400).json({ message: "Email already registered" });
       }
@@ -53,11 +54,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: hashedPassword,
       });
 
-      req.session!.userId = user.id;
-      res.json({ 
-        id: user.id, 
-        email: user.email, 
-        firstName: user.firstName, 
+      (req.session as any).userId = user.id; // Set session
+      res.json({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
         points: user.points,
@@ -72,16 +73,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, password } = req.body;
       const user = await storage.getUserByEmail(email);
-      
       if (!user || !(await comparePassword(password, user.password))) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      req.session!.userId = user.id;
-      res.json({ 
-        id: user.id, 
-        email: user.email, 
-        firstName: user.firstName, 
+      (req.session as any).userId = user.id;
+      res.json({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
         points: user.points,
@@ -94,9 +94,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/logout", (req, res) => {
     req.session?.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Logout failed" });
-      }
+      if (err) return res.status(500).json({ message: "Logout failed" });
       res.json({ message: "Logged out successfully" });
     });
   });
@@ -104,33 +102,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/user", requireAuth, async (req: AuthRequest, res) => {
     try {
       const user = await storage.getUser(req.user!.id);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      res.json({ 
-        id: user.id, 
-        email: user.email, 
-        firstName: user.firstName, 
-        lastName: user.lastName,
-        role: user.role,
-        points: user.points,
-      });
+      if (!user) return res.status(404).json({ message: "User not found" });
+      res.json(user);
     } catch (error) {
       console.error("Get user error:", error);
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 
-  // Item routes
+  // ------------------ ITEM ROUTES ------------------ //
   app.get("/api/items", async (req, res) => {
     try {
-      const { category, size, condition, search } = req.query;
-      const items = await storage.getItems({
-        category: category as string,
-        size: size as string,
-        condition: condition as string,
-        search: search as string,
-      });
+      const items = await storage.getItems(req.query as any);
       res.json(items);
     } catch (error) {
       console.error("Get items error:", error);
@@ -142,9 +125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const item = await storage.getItem(id);
-      if (!item) {
-        return res.status(404).json({ message: "Item not found" });
-      }
+      if (!item) return res.status(404).json({ message: "Item not found" });
       res.json(item);
     } catch (error) {
       console.error("Get item error:", error);
@@ -152,240 +133,239 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/items", requireAuth, upload.array("images", 5), async (req: AuthRequest, res) => {
-    try {
-      const files = req.files as Express.Multer.File[];
-      const images = files ? files.map(file => `/uploads/${file.filename}`) : [];
-      
-      const validatedData = insertItemSchema.parse({
-        ...req.body,
-        ownerId: req.user!.id,
-        images,
-        tags: req.body.tags ? req.body.tags.split(",").map((tag: string) => tag.trim()) : [],
-        points: parseInt(req.body.points) || 25,
-      });
+  app.post(
+    "/api/items",
+    requireAuth,
+    upload.array("images", 5),
+    async (req: AuthRequest, res) => {
+      try {
+        const files = req.files as Express.Multer.File[];
+        const images = files.map((file) => `/uploads/${file.filename}`);
 
-      const item = await storage.createItem(validatedData);
-      res.json(item);
-    } catch (error) {
-      console.error("Create item error:", error);
-      res.status(400).json({ message: "Failed to create item" });
+        const validated = insertItemSchema.parse({
+          ...req.body,
+          ownerId: req.user!.id,
+          images,
+          tags: req.body.tags
+            ? req.body.tags.split(",").map((tag: string) => tag.trim())
+            : [],
+          points: parseInt(req.body.points) || 25,
+        });
+
+        const item = await storage.createItem(validated);
+        res.json(item);
+      } catch (error) {
+        console.error("Create item error:", error);
+        res.status(400).json({ message: "Failed to create item" });
+      }
     }
-  });
+  );
 
   app.get("/api/user/items", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const items = await storage.getItems({ ownerId: req.user!.id, status: undefined });
+      const items = await storage.getItems({ ownerId: req.user!.id });
       res.json(items);
     } catch (error) {
-      console.error("Get user items error:", error);
+      console.error("User items error:", error);
       res.status(500).json({ message: "Failed to fetch user items" });
     }
   });
 
-  // AI suggestion endpoint
-  app.post("/api/items/ai-suggestions", requireAuth, upload.single("image"), async (req: AuthRequest, res) => {
-    try {
-      const { title } = req.body;
-      const file = req.file;
-      
-      if (!title) {
-        return res.status(400).json({ message: "Title is required" });
-      }
+  // ------------------ AI SUGGESTIONS ------------------ //
+  app.post(
+    "/api/items/ai-suggestions",
+    requireAuth,
+    upload.single("image"),
+    async (req: AuthRequest, res) => {
+      try {
+        const { title } = req.body;
+        const file = req.file;
+        if (!title) {
+          return res.status(400).json({ message: "Title is required" });
+        }
 
-      let imagePath: string | undefined;
-      if (file) {
-        imagePath = file.path;
-      }
+        const imagePath = file?.path;
+        const result = await generateItemSuggestions(title, imagePath);
 
-      const suggestions = await generateItemSuggestions(title, imagePath);
-      
-      // Clean up uploaded file if it exists
-      if (imagePath && fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
+        // Clean up uploaded image
+        if (imagePath && fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
 
-      res.json(suggestions);
-    } catch (error) {
-      console.error("AI suggestions error:", error);
-      res.status(500).json({ message: "Failed to generate AI suggestions" });
+        res.json(result);
+      } catch (error) {
+        console.error("AI suggestion error:", error);
+        res.status(500).json({ message: "Failed to generate suggestions" });
+      }
     }
-  });
+  );
 
-  // Natural language search endpoint
+  // ------------------ ADMIN ROUTES ------------------ //
+app.get("/api/admin/items/pending", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const items = await storage.getPendingItems();
+    console.log("✅ Pending items fetched:", items); // Debug
+    res.json(items);
+  } catch (error) {
+    console.error("❌ Admin pending items error:", error);
+    res.status(500).json({ message: "Failed to fetch pending items" });
+  }
+});
+
+app.put("/api/admin/items/:id/status", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    const { status } = req.body;
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    await storage.updateItemStatus(itemId, status);
+    res.json({ message: "Item status updated" });
+  } catch (error) {
+    console.error("❌ Update item status error:", error);
+    res.status(500).json({ message: "Failed to update item status" });
+  }
+});
+
+app.delete("/api/admin/items/:id", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    await storage.deleteItem(itemId);
+    res.json({ message: "Item deleted successfully" });
+  } catch (error) {
+    console.error("❌ Delete item error:", error);
+    res.status(500).json({ message: "Failed to delete item" });
+  }
+});
+
+app.get("/api/admin/stats", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const stats = await storage.getUserStats();
+    res.json(stats);
+  } catch (error) {
+    console.error("❌ Admin stats error:", error);
+    res.status(500).json({ message: "Failed to fetch stats" });
+  }
+});
+
+  app.post("/api/requests", requireAuth, async (req: AuthRequest, res) => {
+    try {
+        const { type, itemId, offeredItemId, offeredPoints } = req.body;
+        console.log("Incoming request body:", req.body); // Add this line
+
+        if (!type || !itemId) {
+            return res.status(400).json({ message: "Missing required fields" });
+        }
+
+        const item = await storage.getItem(itemId);
+        if (!item) {
+            return res.status(404).json({ message: "Item not found" });
+        }
+
+        const request = await storage.createRequest({
+            type,
+            itemId,
+            offeredItemId,
+            offeredPoints,
+            requesterId: req.user!.id,
+            ownerId: item.ownerId,
+        });
+
+        res.status(201).json(request);
+    } catch (err) {
+        console.error("Create request error:", err);
+        res.status(500).json({ message: "Failed to create request" });
+    }
+});
+
+app.get("/api/requests/incoming", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const requests = await storage.getRequestsForOwner(req.user!.id);
+    res.json(requests);
+  } catch (err) {
+    console.error("Get incoming requests error:", err);
+    res.status(500).json({ message: "Failed to get requests" });
+  }
+});
+
+app.post("/api/requests/:id/approve", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const requestId = parseInt(req.params.id);
+    const request = await storage.getRequestsForOwner(req.user!.id);
+    const found = request.find(r => r.id === requestId);
+
+    if (!found) {
+      return res.status(404).json({ message: "Request not found" });
+    }
+
+    await storage.approveRequest(requestId);
+
+    // Handle post-approval actions
+    if (found.type === "swap") {
+      await db.update(items)
+        .set({ ownerId: found.requesterId })
+        .where(eq(items.id, found.itemId));
+
+      if (found.offeredItemId) {
+        await db.update(items)
+          .set({ ownerId: found.ownerId })
+          .where(eq(items.id, found.offeredItemId));
+      }
+    } else if (found.type === "points") {
+      await db.update(users)
+        .set({ points: sql`${users.points} - ${found.offeredPoints}` })
+        .where(eq(users.id, found.requesterId));
+
+      await db.update(users)
+        .set({ points: sql`${users.points} + ${found.offeredPoints}` })
+        .where(eq(users.id, found.ownerId));
+
+      await storage.createPointTransaction({
+        userId: found.requesterId,
+        amount: -found.offeredPoints!,
+        type: "debit",
+        description: `Points sent for ${found.itemId}`,
+      });
+
+      await storage.createPointTransaction({
+        userId: found.ownerId,
+        amount: found.offeredPoints!,
+        type: "credit",
+        description: `Points received for ${found.itemId}`,
+      });
+
+      // Optionally delete the item after transfer
+      await storage.deleteItem(found.itemId);
+    }
+
+    res.json({ message: "Request approved" });
+  } catch (err) {
+    console.error("Approve request error:", err);
+    res.status(500).json({ message: "Failed to approve request" });
+  }
+});
+
+
+
+  // ------------------ SEARCH ------------------ //
   app.post("/api/search/natural", async (req, res) => {
     try {
       const { query } = req.body;
-      
-      if (!query) {
-        return res.status(400).json({ message: "Query is required" });
-      }
+      if (!query) return res.status(400).json({ message: "Query is required" });
 
       const filters = await parseNaturalSearch(query);
       const items = await storage.getItems(filters);
-      
       res.json({ filters, items });
     } catch (error) {
-      console.error("Natural search error:", error);
-      res.status(500).json({ message: "Failed to process natural search" });
+      console.error("Search error:", error);
+      res.status(500).json({ message: "Failed to search" });
     }
   });
 
-  // Swap routes
-  app.get("/api/swaps", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const swaps = await storage.getSwaps(req.user!.id);
-      res.json(swaps);
-    } catch (error) {
-      console.error("Get swaps error:", error);
-      res.status(500).json({ message: "Failed to fetch swaps" });
-    }
-  });
-
-  app.post("/api/swaps", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const validatedData = insertSwapSchema.parse({
-        ...req.body,
-        requesterId: req.user!.id,
-      });
-
-      const item = await storage.getItem(validatedData.itemId);
-      if (!item) {
-        return res.status(404).json({ message: "Item not found" });
-      }
-
-      if (validatedData.swapType === "points") {
-        const user = await storage.getUser(req.user!.id);
-        if (!user || user.points < validatedData.pointsUsed!) {
-          return res.status(400).json({ message: "Insufficient points" });
-        }
-      }
-
-      const swap = await storage.createSwap({
-        ...validatedData,
-        ownerId: item.ownerId,
-      });
-
-      res.json(swap);
-    } catch (error) {
-      console.error("Create swap error:", error);
-      res.status(400).json({ message: "Failed to create swap" });
-    }
-  });
-
-  app.put("/api/swaps/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { status } = req.body;
-      
-      const swap = await storage.getSwap(id);
-      if (!swap) {
-        return res.status(404).json({ message: "Swap not found" });
-      }
-
-      if (swap.ownerId !== req.user!.id) {
-        return res.status(403).json({ message: "Not authorized" });
-      }
-
-      await storage.updateSwapStatus(id, status);
-
-      if (status === "accepted" && swap.swapType === "points") {
-        // Deduct points from requester
-        const requester = await storage.getUser(swap.requesterId);
-        if (requester) {
-          await storage.updateUserPoints(swap.requesterId, requester.points - swap.pointsUsed!);
-          await storage.createPointTransaction({
-            userId: swap.requesterId,
-            amount: -swap.pointsUsed!,
-            type: "spent",
-            description: `Redeemed ${swap.item.title}`,
-            relatedSwapId: swap.id,
-          });
-        }
-
-        // Add points to owner
-        const owner = await storage.getUser(swap.ownerId);
-        if (owner) {
-          await storage.updateUserPoints(swap.ownerId, owner.points + swap.pointsUsed!);
-          await storage.createPointTransaction({
-            userId: swap.ownerId,
-            amount: swap.pointsUsed!,
-            type: "earned",
-            description: `Earned from ${swap.item.title}`,
-            relatedSwapId: swap.id,
-          });
-        }
-
-        // Mark item as swapped
-        await storage.updateItemStatus(swap.itemId, "swapped");
-      }
-
-      res.json({ message: "Swap updated successfully" });
-    } catch (error) {
-      console.error("Update swap error:", error);
-      res.status(500).json({ message: "Failed to update swap" });
-    }
-  });
-
-  // Point transaction routes
-  app.get("/api/points/transactions", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const transactions = await storage.getPointTransactions(req.user!.id);
-      res.json(transactions);
-    } catch (error) {
-      console.error("Get point transactions error:", error);
-      res.status(500).json({ message: "Failed to fetch point transactions" });
-    }
-  });
-
-  // Admin routes
-  app.get("/api/admin/items/pending", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const items = await storage.getPendingItems();
-      res.json(items);
-    } catch (error) {
-      console.error("Get pending items error:", error);
-      res.status(500).json({ message: "Failed to fetch pending items" });
-    }
-  });
-
-  app.put("/api/admin/items/:id/status", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { status } = req.body;
-      
-      await storage.updateItemStatus(id, status);
-      res.json({ message: "Item status updated successfully" });
-    } catch (error) {
-      console.error("Update item status error:", error);
-      res.status(500).json({ message: "Failed to update item status" });
-    }
-  });
-
-  app.delete("/api/admin/items/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      await storage.deleteItem(id);
-      res.json({ message: "Item deleted successfully" });
-    } catch (error) {
-      console.error("Delete item error:", error);
-      res.status(500).json({ message: "Failed to delete item" });
-    }
-  });
-
-  app.get("/api/admin/stats", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const stats = await storage.getUserStats();
-      res.json(stats);
-    } catch (error) {
-      console.error("Get stats error:", error);
-      res.status(500).json({ message: "Failed to fetch stats" });
-    }
-  });
-
-  // Serve uploaded files
+  // ------------------ UPLOADS STATIC FOLDER ------------------ //
   app.use("/uploads", express.static(uploadsDir));
 
-  const httpServer = createServer(app);
-  return httpServer;
+  return createServer(app);
 }
+
+

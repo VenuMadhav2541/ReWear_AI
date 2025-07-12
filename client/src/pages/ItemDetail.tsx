@@ -22,52 +22,62 @@ export default function ItemDetail() {
     queryKey: ["/api/items", id],
     queryFn: async () => {
       const response = await fetch(`/api/items/${id}`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch item");
-      }
+      if (!response.ok) throw new Error("Failed to fetch item");
       return response.json();
     },
     enabled: !!id,
   });
 
   const swapMutation = useMutation({
-    mutationFn: (data: { itemId: number; swapType: string; pointsUsed?: number }) =>
-      apiRequest("POST", "/api/swaps", data),
-    onSuccess: () => {
+  mutationFn: (data: { itemId: number; swapType: "swap" | "points"; pointsUsed?: number }) => {
+    const payload: any = {
+      type: data.swapType,
+      itemId: data.itemId,
+    };
+
+    if (data.swapType === "points") {
+      payload.offeredPoints = data.pointsUsed;
+    }
+
+    // In the future: Add offeredItemId if implementing swap UI
+    // else if (data.swapType === "swap") {
+    //   payload.offeredItemId = selectedItemId;
+    // }
+
+    return apiRequest("POST", "/api/requests", payload);
+  },
+  onSuccess: () => {
+    toast({
+      title: "Request sent!",
+      description: "The owner will be notified of your request.",
+    });
+  },
+  onError: (error) => {
+    if (isUnauthorizedError(error)) {
       toast({
-        title: "Swap request sent!",
-        description: "The owner will be notified of your request.",
-      });
-    },
-    onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Please sign in",
-          description: "You need to be logged in to make a swap request.",
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({
-        title: "Failed to send swap request",
-        description: error.message,
+        title: "Please sign in",
+        description: "You need to be logged in to make a swap request.",
         variant: "destructive",
       });
-    },
-  });
+      return;
+    }
+    toast({
+      title: "Failed to send request",
+      description: error.message,
+      variant: "destructive",
+    });
+  },
+});
+
 
   const handleSwapRequest = () => {
     if (!item || !isAuthenticated) return;
-    
-    swapMutation.mutate({
-      itemId: item.id,
-      swapType: "direct",
-    });
+    swapMutation.mutate({ itemId: item.id, swapType: "swap" });
   };
 
   const handlePointsRedeem = () => {
     if (!item || !user) return;
-    
+
     if (user.points < item.points) {
       toast({
         title: "Insufficient points",
@@ -76,7 +86,7 @@ export default function ItemDetail() {
       });
       return;
     }
-    
+
     swapMutation.mutate({
       itemId: item.id,
       swapType: "points",
@@ -166,7 +176,7 @@ export default function ItemDetail() {
               <CardContent className="p-6">
                 <h1 className="text-3xl font-bold text-gray-900 mb-4">{item.title}</h1>
                 <p className="text-gray-600 mb-6">{item.description}</p>
-                
+
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>
                     <span className="text-sm text-gray-500">Category</span>

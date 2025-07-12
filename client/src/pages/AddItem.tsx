@@ -247,19 +247,23 @@ export default function AddItem() {
                   <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <p className="text-gray-600 mb-4">Click to upload or drag and drop</p>
                   <p className="text-sm text-gray-500 mb-4">PNG, JPG, GIF up to 5MB (max 5 images)</p>
+                  <Button
+                    type="button"
+                    onClick={() => document.getElementById("file-upload")?.click()}
+                    className="gradient-btn text-white"
+                  >
+                    Choose Images
+                  </Button>
                   <input
+                    id="file-upload"
                     type="file"
-                    multiple
                     accept="image/*"
+                    multiple
                     onChange={handleFileChange}
                     className="hidden"
-                    id="file-upload"
                   />
-                  <label htmlFor="file-upload">
-                    <Button type="button" className="gradient-btn text-white">
-                      Choose Images
-                    </Button>
-                  </label>
+
+
                 </div>
                 
                 {selectedFiles.length > 0 && (

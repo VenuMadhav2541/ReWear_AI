@@ -1,7 +1,17 @@
+import * as dotenv from "dotenv";
+dotenv.config();
+
 import * as fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+  throw new Error("GEMINI_API_KEY is missing in environment variables");
+}
+
+const ai = new GoogleGenAI({ apiKey });
+
+console.log("GEMINI_API_KEY loaded:", apiKey ? "✔️ key exists" : "❌ NOT SET");
 
 export interface ItemSuggestion {
   description: string;
@@ -15,7 +25,7 @@ export async function generateItemSuggestions(
 ): Promise<ItemSuggestion> {
   try {
     let contents: any[] = [];
-    
+
     if (imagePath && fs.existsSync(imagePath)) {
       const imageBytes = fs.readFileSync(imagePath);
       contents.push({
@@ -43,29 +53,13 @@ Return the response in JSON format:
     contents.push(prompt);
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            description: { type: "string" },
-            tags: { 
-              type: "array",
-              items: { type: "string" }
-            },
-            condition: { type: "string" }
-          },
-          required: ["description", "tags"]
-        },
-      },
+      model: "gemini-pro",
       contents: contents,
     });
 
     const rawJson = response.text;
     if (rawJson) {
-      const data: ItemSuggestion = JSON.parse(rawJson);
-      return data;
+      return JSON.parse(rawJson);
     } else {
       throw new Error("Empty response from Gemini");
     }
@@ -82,15 +76,14 @@ export async function moderateContent(text: string): Promise<boolean> {
 Text: "${text}"`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+      model: "gemini-pro",
+      contents: [prompt],
     });
 
     const result = response.text?.trim().toLowerCase();
     return result === "yes";
   } catch (error) {
     console.error("Error moderating content:", error);
-    // Default to allowing content if moderation fails
     return true;
   }
 }
@@ -119,20 +112,8 @@ Return as JSON with only the relevant fields:
 User query: "${query}"`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            category: { type: "string" },
-            size: { type: "string" },
-            condition: { type: "string" },
-            search: { type: "string" }
-          }
-        },
-      },
-      contents: prompt,
+      model: "gemini-pro",
+      contents: [prompt],
     });
 
     const rawJson = response.text;

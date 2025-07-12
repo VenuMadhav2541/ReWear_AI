@@ -1,8 +1,11 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, varchar, jsonb, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-
+import {
+  InferSelectModel,
+  InferInsertModel,
+} from "drizzle-orm";
 // Session storage table for authentication
 export const sessions = pgTable(
   "sessions",
@@ -13,6 +16,27 @@ export const sessions = pgTable(
   },
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
+
+export const requestTypeEnum = pgEnum("request_type", ["swap", "points"]);
+export const requestStatusEnum = pgEnum("request_status", ["pending", "approved"]);
+
+export const requests = pgTable("requests", {
+  id: serial("id").primaryKey(),
+  type: requestTypeEnum("type").notNull(),
+  itemId: integer("item_id").notNull(), // Item being requested
+  offeredItemId: integer("offered_item_id"), // Optional swap item
+  offeredPoints: integer("offered_points"), // Optional points
+  requesterId: integer("requester_id").notNull(),
+  ownerId: integer("owner_id").notNull(),
+  status: requestStatusEnum("status").default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type Request = typeof requests.$inferSelect;
+export type InsertRequest = typeof requests.$inferInsert;
+
+
+
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -133,6 +157,22 @@ export const insertPointTransactionSchema = createInsertSchema(pointTransactions
   id: true,
   createdAt: true,
 });
+
+// Swap Requests Table
+export const swapRequests = pgTable("swap_requests", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(), // "swap" or "points"
+  itemId: integer("item_id").references(() => items.id).notNull(),
+  requesterId: integer("requester_id").references(() => users.id).notNull(),
+  ownerId: integer("owner_id").references(() => users.id).notNull(),
+  offeredItemId: integer("offered_item_id"), // only for swap
+  offeredPoints: integer("offered_points"), // only for points
+  status: text("status").default("pending"), // pending | approved | rejected
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type SwapRequest = InferSelectModel<typeof swapRequests>;
+export type InsertSwapRequest = InferInsertModel<typeof swapRequests>;
 
 // Types
 export type User = typeof users.$inferSelect;

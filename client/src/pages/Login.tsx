@@ -33,26 +33,39 @@ export default function Login() {
     resolver: zodResolver(loginSchema),
   });
 
-  const loginMutation = useMutation({
-    mutationFn: (data: LoginForm) => apiRequest("POST", "/api/auth/login", data),
-    onSuccess: async (response) => {
-      const user = await response.json();
-      queryClient.setQueryData(["/api/auth/user"], user);
-      toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
-      });
-      setLocation("/dashboard");
-    },
-    onError: (error) => {
-      setError(error.message);
-      toast({
-        title: "Login failed",
-        description: "Please check your credentials and try again.",
-        variant: "destructive",
-      });
-    },
-  });
+ const loginMutation = useMutation({
+  mutationFn: async (data: LoginForm) => {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || "Login failed");
+    }
+
+    return response.json(); // parsed user object
+  },
+  onSuccess: (user) => {
+    queryClient.setQueryData(["/api/auth/user"], user);
+    toast({
+      title: "Welcome back!",
+      description: "You have successfully logged in.",
+    });
+    setLocation("/dashboard");
+  },
+  onError: (error) => {
+    setError(error.message); // shows in the <Alert />
+    toast({
+      title: "Login failed",
+      description: error.message || "Invalid credentials.",
+      variant: "destructive",
+    });
+  },
+});
 
   const onSubmit = (data: LoginForm) => {
     setError(null);
